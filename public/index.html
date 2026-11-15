@@ -44,7 +44,7 @@ th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--bd);white-s
 <div id="root"></div>
 <script>
 const LN={lunch:'Lunch Break',dinner:'Dinner Break',wc:'WC Break'},LIM={lunch:30,dinner:30,wc:15};
-let tok='',me=null,S=null,view='punch',msg='',edit=null,off=0,fresh=new Set();
+let tok='',me=null,S=null,view='punch',msg='',edit=null,fedit=null,off=0,fresh=new Set();
 try{tok=localStorage.getItem('am_t')||'';me=JSON.parse(localStorage.getItem('am_m')||'null')}catch(e){}
 const $=s=>document.querySelector(s),now=()=>Date.now()+off;
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -63,14 +63,17 @@ async function act(p,b,ok){let r=0;try{const d=await api(p,b);msg=d.fined?'Break
 async function refresh(r){
  if(!me)return render();
  try{S=await api(me.role==='admin'?'state':'me');off=S.now-Date.now()}catch(e){if(!me)return;msg=msg||e.message}
- if(r||me.role!=='admin'||view!=='staff')render();else{const n=$('#nb');if(n)n.textContent=S.unseen||''}}
+ if(r||me.role!=='admin'||(view!=='staff'&&!fedit))render();else{const n=$('#nb');if(n)n.textContent=S.unseen||''}}
 async function login(){
  try{const d=await api('login',{username:$('#u').value.trim(),password:$('#p').value});tok=d.token;me={role:d.role,name:d.name};
   try{localStorage.setItem('am_t',tok);localStorage.setItem('am_m',JSON.stringify(me))}catch(e){}
   msg='';view='punch';await refresh(true)}catch(e){msg=e.message;render()}}
 function logout(m){me=null;S=null;tok='';edit=null;msg=m||'';try{localStorage.removeItem('am_t');localStorage.removeItem('am_m')}catch(e){}render()}
-function go(v){view=v;msg='';edit=null;if(v==='notif'){fresh=new Set(S.notifs.filter(n=>!n.seen).map(n=>n.id));render();api('notif/seen',{}).then(()=>refresh(false))}else render()}
+function go(v){view=v;msg='';edit=null;fedit=null;if(v==='notif'){fresh=new Set(S.notifs.filter(n=>!n.seen).map(n=>n.id));render();api('notif/seen',{}).then(()=>refresh(false))}else render()}
 const val=p=>({name:$('#'+p+'n').value.trim(),role:$('#'+p+'r').value,username:$('#'+p+'u').value.trim(),password:$('#'+p+'p').value,duty_start:$('#'+p+'s').value,duty_end:$('#'+p+'t').value});
+async function saveFine(){if(await act('fine/update',{id:fedit,amount:$('#fa').value,reason:$('#fr').value},'Fine updated.'))fedit=null;render()}
+function delFine(id){if(confirm('Delete this fine?'))act('fine/delete',{id},'Fine deleted.')}
+function resetFines(sid){const s=sid&&S.staff.find(x=>x.id==sid);if(confirm(s?'Reset all fines for '+s.name+'?':'Reset ALL fines for everyone?'))act('fine/reset',sid?{staff_id:sid}:{},'Fines reset.')}
 const addStaff=()=>act('staff/add',val('a'),'Staff added.');
 async function saveEdit(){if(await act('staff/update',{...val('e'),id:edit},'Staff updated.'))edit=null;render()}
 const form=(p,e={})=>`<div class="row"><div><label>Name</label><input id="${p}n" value="${esc(e.name||'')}" placeholder="Name"></div>
@@ -107,14 +110,15 @@ function staffV(){
 <div class="card"><h3>All Staff</h3><div class="tw"><table><tr><th>Name</th><th>Role</th><th>Username</th><th>Duty time</th><th>Status</th><th>Actions</th></tr>`;
  S.staff.forEach(s=>h+=`<tr><td>${esc(s.name)}</td><td>${esc(s.role)}</td><td>${esc(s.username)}</td><td>${s.duty_start} - ${s.duty_end}</td>
 <td><span class="badge ${s.active?'b-g':'b-r'}">${s.active?'Active':'Inactive'}</span></td>
-<td><button class="g s" onclick="edit=${s.id};msg='';render();scrollTo(0,0)">Edit</button> <button class="s ${s.active?'r':'ok'}" onclick="act('staff/toggle',{id:${s.id}})">${s.active?'Deactivate':'Activate'}</button></td></tr>`);
+<td><button class="g s" onclick="edit=${s.id};msg='';render();scrollTo(0,0)">Edit</button> <button class="g s" onclick="resetFines(${s.id})">Reset Fines</button> <button class="s ${s.active?'r':'ok'}" onclick="act('staff/toggle',{id:${s.id}})">${s.active?'Deactivate':'Activate'}</button></td></tr>`);
  return h+'</table></div></div>'}
 
 function fineV(){
- const tot=S.fines.reduce((a,f)=>a+f.amount,0);
- let h=`<div class="stats"><div class="stat">Total fines<b>${S.fines.length}</b></div><div class="stat">Total amount<b>${money(tot)}</b></div></div><div class="card"><h3>Fine List</h3><div class="tw"><table><tr><th>Date</th><th>Staff</th><th>Amount</th><th>Reason</th></tr>`;
- S.fines.forEach(f=>h+=`<tr><td>${dt(f.at)} ${tm(f.at)}</td><td>${esc(f.staff_name)}</td><td class="over"><b>${money(f.amount)}</b></td><td>${esc(f.reason)}</td></tr>`);
- return h+(S.fines.length?'':'<tr><td colspan="4" class="mu">No fines yet.</td></tr>')+'</table></div></div>'}
+ const tot=S.fines.reduce((a,f)=>a+f.amount,0),e=fedit&&S.fines.find(f=>f.id==fedit);
+ let h=e?`<div class="card"><h3>Edit Fine: ${esc(e.staff_name)}</h3><div class="row"><div><label>Amount (Tk)</label><input id="fa" type="number" min="0" value="${e.amount}"></div><div><label>Reason</label><input id="fr" value="${esc(e.reason||'')}"></div></div><button onclick="saveFine()">Save Changes</button> <button class="g" onclick="fedit=null;render()">Cancel</button></div>`:'';
+ h+=`<div class="stats"><div class="stat">Total fines<b>${S.fines.length}</b></div><div class="stat">Total amount<b>${money(tot)}</b></div></div><div class="card"><div class="top" style="margin-bottom:8px"><h3 style="margin:0">Fine List</h3><button class="r s" onclick="resetFines()">Reset All Fines</button></div><div class="tw"><table><tr><th>Date</th><th>Staff</th><th>Amount</th><th>Reason</th><th>Actions</th></tr>`;
+ S.fines.forEach(f=>h+=`<tr><td>${dt(f.at)} ${tm(f.at)}</td><td>${esc(f.staff_name)}</td><td class="over"><b>${money(f.amount)}</b></td><td>${esc(f.reason)}</td><td><button class="g s" onclick="fedit=${f.id};msg='';render();scrollTo(0,0)">Edit</button> <button class="r s" onclick="delFine(${f.id})">Delete</button></td></tr>`);
+ return h+(S.fines.length?'':'<tr><td colspan="5" class="mu">No fines yet.</td></tr>')+'</table></div></div>'}
 
 function notifV(){
  return `<div class="card"><h3>Notifications</h3>${S.notifs.map(n=>`<div class="nt ${fresh.has(n.id)?'new':''}"><span>${esc(n.message)}</span><span class="mu">${dt(n.at)} ${tm(n.at)}</span></div>`).join('')||'<p class="mu">No notifications yet.</p>'}</div>`}
