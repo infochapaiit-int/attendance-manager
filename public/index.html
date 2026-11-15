@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Attendance Manager</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1018;--card:#1a212b;--in:#0f141b;--bd:#2a3340;--tx:#e8edf3;--mu:#8b97a7;--bl:#2563eb;--rd:#ef4444;--gn:#22c55e;--am:#f59e0b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}
+.app{display:flex;min-height:100vh}
+.side{width:210px;background:#10161f;border-right:1px solid var(--bd);padding:16px 10px;flex-shrink:0}
+.side h2{font-size:15px;margin:0 8px 16px}
+.side a{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:8px;color:var(--mu);cursor:pointer;margin-bottom:4px}
+.side a.on,.side a:hover{background:var(--bl);color:#fff}
+.nb{background:var(--rd);color:#fff;border-radius:99px;padding:0 7px;font-size:11px;font-weight:700;margin-left:8px}
+.main{flex:1;padding:20px;min-width:0}
+.top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.top h1{font-size:20px;margin:0}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin-bottom:16px}
+.card h3{margin:0 0 12px;font-size:16px}
+input,select{width:100%;background:var(--in);border:1px solid var(--bd);border-radius:10px;color:var(--tx);padding:12px;font:inherit;margin-bottom:10px}
+label{display:block;font-size:12px;color:var(--mu);margin-bottom:4px}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0 12px}
+button{background:var(--bl);color:#fff;border:0;border-radius:10px;padding:10px 18px;font:inherit;font-weight:600;cursor:pointer}
+button.g{background:#2a3340}button.r{background:var(--rd)}button.ok{background:var(--gn);color:#06210f}button.am{background:var(--am);color:#2b1a00}
+button.s{padding:6px 10px;font-size:12px}
+.tw{overflow-x:auto}table{width:100%;border-collapse:collapse;min-width:560px}
+th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--bd);white-space:nowrap}th{color:var(--mu);font-weight:600;font-size:12px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px}.stat b{display:block;font-size:22px;margin-top:4px}
+.badge{padding:3px 9px;border-radius:99px;font-size:12px;font-weight:600}
+.b-g{background:#12301d;color:var(--gn)}.b-r{background:#3a1616;color:#f87171}.b-a{background:#3a2a0a;color:var(--am)}.b-m{background:#232b36;color:var(--mu)}
+.big{font:700 44px/1.1 ui-monospace,Consolas,monospace;text-align:center;margin:10px 0}
+.btns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:12px}
+.warn{background:#3a2a0a;border:1px solid var(--am);color:#fcd34d;padding:12px;border-radius:10px;margin-bottom:14px}
+.nt{padding:12px;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;gap:10px}.nt.new{background:#1b2740}
+.over{color:#f87171}.mu{color:var(--mu)}
+.login{max-width:360px;margin:8vh auto;padding:0 16px}.login .card{padding:22px}
+@media(max-width:700px){.app{flex-direction:column}.side{width:100%;display:flex;gap:6px;overflow-x:auto;padding:10px}.side h2{display:none}.side a{margin:0;white-space:nowrap}.main{padding:14px}.big{font-size:34px}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const LN={lunch:'Lunch Break',dinner:'Dinner Break',wc:'WC Break'},LIM={lunch:30,dinner:30,wc:15};
+let tok='',me=null,S=null,view='punch',msg='',edit=null,off=0,fresh=new Set();
+try{tok=localStorage.getItem('am_t')||'';me=JSON.parse(localStorage.getItem('am_m')||'null')}catch(e){}
+const $=s=>document.querySelector(s),now=()=>Date.now()+off;
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad=n=>String(n).padStart(2,'0');
+const hms=ms=>{ms=Math.max(0,Math.floor(ms/1000));return pad(Math.floor(ms/3600))+':'+pad(Math.floor(ms%3600/60))+':'+pad(ms%60)};
+const ms2=ms=>{ms=Math.max(0,Math.floor(ms/1000));return pad(Math.floor(ms/60))+':'+pad(ms%60)};
+const tm=t=>new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+const dt=t=>new Date(t).toLocaleDateString([],{day:'2-digit',month:'short',year:'numeric'});
+const money=n=>'Tk '+Number(n).toLocaleString();
+async function api(p,b){
+ const r=await fetch('/api/'+p,{method:b?'POST':'GET',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:b?JSON.stringify(b):undefined});
+ const d=await r.json().catch(()=>({}));
+ if(r.status===401&&p!=='login'){logout(d.error);throw new Error(d.error||'Please log in again.')}
+ if(!r.ok)throw new Error(d.error||'Request failed');return d}
+async function act(p,b,ok){let r=0;try{const d=await api(p,b);msg=d.fined?'Break exceeded the limit. A fine of Tk 500 was added.':(ok||'');r=1}catch(e){msg=e.message}await refresh(true);return r}
+async function refresh(r){
+ if(!me)return render();
+ try{S=await api(me.role==='admin'?'state':'me');off=S.now-Date.now()}catch(e){if(!me)return;msg=msg||e.message}
+ if(r||me.role!=='admin'||view!=='staff')render();else{const n=$('#nb');if(n)n.textContent=S.unseen||''}}
+async function login(){
+ try{const d=await api('login',{username:$('#u').value.trim(),password:$('#p').value});tok=d.token;me={role:d.role,name:d.name};
+  try{localStorage.setItem('am_t',tok);localStorage.setItem('am_m',JSON.stringify(me))}catch(e){}
+  msg='';view='punch';await refresh(true)}catch(e){msg=e.message;render()}}
+function logout(m){me=null;S=null;tok='';edit=null;msg=m||'';try{localStorage.removeItem('am_t');localStorage.removeItem('am_m')}catch(e){}render()}
+function go(v){view=v;msg='';edit=null;if(v==='notif'){fresh=new Set(S.notifs.filter(n=>!n.seen).map(n=>n.id));render();api('notif/seen',{}).then(()=>refresh(false))}else render()}
+const val=p=>({name:$('#'+p+'n').value.trim(),role:$('#'+p+'r').value,username:$('#'+p+'u').value.trim(),password:$('#'+p+'p').value,duty_start:$('#'+p+'s').value,duty_end:$('#'+p+'t').value});
+const addStaff=()=>act('staff/add',val('a'),'Staff added.');
+async function saveEdit(){if(await act('staff/update',{...val('e'),id:edit},'Staff updated.'))edit=null;render()}
+const form=(p,e={})=>`<div class="row"><div><label>Name</label><input id="${p}n" value="${esc(e.name||'')}" placeholder="Name"></div>
+<div><label>Role</label><select id="${p}r">${['Staff','Manager'].map(r=>`<option ${e.role===r?'selected':''}>${r}</option>`).join('')}</select></div>
+<div><label>Username</label><input id="${p}u" value="${esc(e.username||'')}" placeholder="Username"></div>
+<div><label>${e.id?'Reset password (leave blank to keep)':'Password'}</label><input id="${p}p" placeholder="${e.id?'New password':'Password'}"></div>
+<div><label>Duty start time</label><input id="${p}s" type="time" value="${e.duty_start||'10:00'}"></div>
+<div><label>Duty end time</label><input id="${p}t" type="time" value="${e.duty_end||'22:00'}"></div></div>`;
+const note=()=>msg?`<div class="warn">${esc(msg)}</div>`:'';
+const sOpen=id=>S.sessions.find(x=>x.staff_id==id&&!x.punch_out);
+const bOpen=sid=>S.breaks.find(b=>b.session_id==sid&&!b.ended);
+
+function loginV(){return `<div class="login"><div class="card"><h3>Attendance Manager</h3>${note()}
+<input id="u" placeholder="Username" autocomplete="username"><input id="p" type="password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
+<button style="width:100%" onclick="login()">Log In</button></div></div>`}
+
+function punchV(){
+ const on=S.sessions.filter(x=>!x.punch_out),today=new Date(now()).toDateString();
+ const tf=S.fines.filter(f=>new Date(f.at).toDateString()===today).reduce((a,f)=>a+f.amount,0);
+ let h=`<div class="stats"><div class="stat">Total staff<b>${S.staff.length}</b></div><div class="stat">On duty now<b>${on.length}</b></div><div class="stat">Today's fines<b>${money(tf)}</b></div></div>
+<div class="card"><h3>Live Status</h3><div class="tw"><table><tr><th>Staff</th><th>Duty</th><th>Status</th><th>Punched in</th><th>Work timer</th></tr>`;
+ S.staff.forEach(s=>{const x=sOpen(s.id),b=x&&bOpen(x.id);
+  const st=!x?'<span class="badge b-m">Off duty</span>':b?`<span class="badge b-a">${LN[b.type]} <span class="tm" data-a="${b.started}">00:00</span></span>`:'<span class="badge b-g">Working</span>';
+  h+=`<tr><td>${esc(s.name)}</td><td>${s.duty_start} - ${s.duty_end}</td><td>${st}</td><td>${x?tm(x.punch_in)+(x.late?' <span class="badge b-r">Late</span>':''):'-'}</td><td>${x?`<span class="tm" data-a="${x.punch_in}">00:00:00</span>`:'-'}</td></tr>`});
+ h+=`</table></div></div><div class="card"><h3>Punch History</h3><div class="tw"><table><tr><th>Staff</th><th>Date</th><th>Punch In</th><th>Punch Out</th><th>Worked</th><th>Breaks</th></tr>`;
+ S.sessions.forEach(x=>{const bt=S.breaks.filter(b=>b.session_id==x.id).map(b=>LN[b.type].replace(' Break','')+' '+(b.ended?Math.ceil((b.ended-b.started)/60000)+'m':'...')).join(', ')||'-';
+  h+=`<tr><td>${esc(x.name)}</td><td>${dt(x.punch_in)}</td><td>${tm(x.punch_in)}${x.late?' <span class="badge b-r">Late</span>':''}</td><td>${x.punch_out?tm(x.punch_out):'<span class="badge b-g">Active</span>'}</td><td>${hms((x.punch_out||now())-x.punch_in)}</td><td>${bt}</td></tr>`});
+ return h+(S.sessions.length?'':'<tr><td colspan="6" class="mu">No punches yet.</td></tr>')+'</table></div></div>'}
+
+function staffV(){
+ const e=edit&&S.staff.find(x=>x.id==edit);
+ let h=e?`<div class="card"><h3>Edit Staff: ${esc(e.name)}</h3>${form('e',e)}<button onclick="saveEdit()">Save Changes</button> <button class="g" onclick="edit=null;render()">Cancel</button></div>`:'';
+ h+=`<div class="card"><h3>Add New Staff</h3>${form('a')}<button onclick="addStaff()">Add Staff</button></div>
+<div class="card"><h3>All Staff</h3><div class="tw"><table><tr><th>Name</th><th>Role</th><th>Username</th><th>Duty time</th><th>Status</th><th>Actions</th></tr>`;
+ S.staff.forEach(s=>h+=`<tr><td>${esc(s.name)}</td><td>${esc(s.role)}</td><td>${esc(s.username)}</td><td>${s.duty_start} - ${s.duty_end}</td>
+<td><span class="badge ${s.active?'b-g':'b-r'}">${s.active?'Active':'Inactive'}</span></td>
+<td><button class="g s" onclick="edit=${s.id};msg='';render();scrollTo(0,0)">Edit</button> <button class="s ${s.active?'r':'ok'}" onclick="act('staff/toggle',{id:${s.id}})">${s.active?'Deactivate':'Activate'}</button></td></tr>`);
+ return h+'</table></div></div>'}
+
+function fineV(){
+ const tot=S.fines.reduce((a,f)=>a+f.amount,0);
+ let h=`<div class="stats"><div class="stat">Total fines<b>${S.fines.length}</b></div><div class="stat">Total amount<b>${money(tot)}</b></div></div><div class="card"><h3>Fine List</h3><div class="tw"><table><tr><th>Date</th><th>Staff</th><th>Amount</th><th>Reason</th></tr>`;
+ S.fines.forEach(f=>h+=`<tr><td>${dt(f.at)} ${tm(f.at)}</td><td>${esc(f.staff_name)}</td><td class="over"><b>${money(f.amount)}</b></td><td>${esc(f.reason)}</td></tr>`);
+ return h+(S.fines.length?'':'<tr><td colspan="4" class="mu">No fines yet.</td></tr>')+'</table></div></div>'}
+
+function notifV(){
+ return `<div class="card"><h3>Notifications</h3>${S.notifs.map(n=>`<div class="nt ${fresh.has(n.id)?'new':''}"><span>${esc(n.message)}</span><span class="mu">${dt(n.at)} ${tm(n.at)}</span></div>`).join('')||'<p class="mu">No notifications yet.</p>'}</div>`}
+
+function adminV(){
+ const T={punch:'Punch',staff:'Staff',fine:'Fine',notif:'Notifications'};
+ const body={punch:punchV,staff:staffV,fine:fineV,notif:notifV}[view]();
+ return `<div class="app"><div class="side"><h2>Attendance Manager</h2>${Object.keys(T).map(k=>`<a class="${view===k?'on':''}" onclick="go('${k}')">${T[k]}${k==='notif'?`<span class="nb" id="nb">${S.unseen||''}</span>`:''}</a>`).join('')}<a onclick="logout()">Log Out</a></div>
+<div class="main"><div class="top"><h1>${T[view]}</h1></div>${note()}${body}</div></div>`}
+
+function staffUI(){
+ const x=S.session,b=x&&x.breaks.find(k=>!k.ended);let c;
+ if(!x)c=`<div class="big mu">00:00:00</div><p class="mu" style="text-align:center">You are off duty. Duty time: ${S.duty_start} - ${S.duty_end}</p><div class="btns"><button class="ok" onclick="act('punch/in',{})">Punch In</button></div>`;
+ else if(b)c=`<p style="text-align:center;margin:0">${LN[b.type]} running (limit ${LIM[b.type]} min)</p><div class="big"><span class="tm" data-a="${b.started}" data-lim="${LIM[b.type]*60000}">00:00</span></div><p id="ov" class="over" style="text-align:center;margin:0"></p><div class="btns"><button class="ok" onclick="act('break/end',{})">End ${LN[b.type]}</button></div>`;
+ else c=`<p style="text-align:center;margin:0">Working since ${tm(x.punch_in)}${x.late?' <span class="badge b-r">Late</span>':''}</p><div class="big"><span class="tm" data-a="${x.punch_in}">00:00:00</span></div>
+<div class="btns"><button class="am" onclick="act('break/start',{type:'lunch'})">Lunch Break</button><button class="am" onclick="act('break/start',{type:'dinner'})">Dinner Break</button><button class="am" onclick="act('break/start',{type:'wc'})">WC Break</button><button class="r" onclick="act('punch/out',{})">Punch Out</button></div>`;
+ const tf=S.fines.reduce((a,f)=>a+f.amount,0);
+ return `<div class="app"><div class="main" style="max-width:760px;margin:auto"><div class="top"><h1>Hello, ${esc(S.name)}</h1><button class="g s" onclick="logout()">Log Out</button></div>${note()}
+<div class="card"><h3>Punch</h3>${c}</div><div class="card"><h3>My Fines (${money(tf)})</h3><div class="tw"><table><tr><th>Date</th><th>Amount</th><th>Reason</th></tr>${S.fines.map(f=>`<tr><td>${dt(f.at)} ${tm(f.at)}</td><td class="over">${money(f.amount)}</td><td>${esc(f.reason)}</td></tr>`).join('')||'<tr><td colspan="3" class="mu">No fines.</td></tr>'}</table></div></div></div></div>`}
+
+function render(){$('#root').innerHTML=!me?loginV():!S?'<p class="mu" style="padding:20px">Loading...</p>':me.role==='admin'?adminV():staffUI();tick()}
+function tick(){document.querySelectorAll('.tm').forEach(e=>{const d=now()-(+e.dataset.a);
+ if(e.dataset.lim){const l=+e.dataset.lim,o=d>l;e.textContent=ms2(d);e.classList.toggle('over',o);const v=$('#ov');if(v)v.textContent=o?'Over the limit! A Tk 500 fine will be added.':'Time taken: '+Math.floor(d/60000)+' min'}
+ else e.textContent=e.closest('.badge')?ms2(d):hms(d)})}
+setInterval(tick,1000);setInterval(()=>{if(me)refresh(false)},5000);
+me&&tok?refresh(true):(me=null,render());
+</script>
+</body>
+</html>
