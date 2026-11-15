@@ -75,6 +75,17 @@ export async function onRequest({request,env}){
     await run('DELETE FROM tokens WHERE staff_id=? AND staff_id IN (SELECT id FROM staff WHERE active=0)',b.id);
     return J({ok:1});
    }
+   if(path==='fine/update'){
+    const amt=Math.round(+b.amount);
+    if(!(amt>=0))return E('Enter a valid amount.');
+    await run('UPDATE fines SET amount=?,reason=? WHERE id=?',amt,String(b.reason||'').trim(),b.id);
+    return J({ok:1});
+   }
+   if(path==='fine/delete'){await run('DELETE FROM fines WHERE id=?',b.id);return J({ok:1})}
+   if(path==='fine/reset'){
+    if(b.staff_id)await run('DELETE FROM fines WHERE staff_id=?',b.staff_id);else await run('DELETE FROM fines');
+    return J({ok:1});
+   }
    if(path==='notif/seen'){await run('UPDATE notifications SET seen=1');return J({ok:1})}
    return J({error:'Not found'},404);
   }
