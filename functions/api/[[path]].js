@@ -103,10 +103,12 @@ export async function onRequest({request,env}){
   }
   if(path==='punch/in'){
    if(cur)return E('You are already punched in.');
-   const last=(await one('SELECT MAX(punch_out) m FROM sessions WHERE staff_id=?',s.id)).m;
-   if(last&&now-last<3600000)return E('You cannot punch in again yet. Wait '+Math.ceil((3600000-(now-last))/60000)+' more minute(s) after your last punch out.');
-   const t=new Intl.DateTimeFormat('en-GB',{timeZone:env.TIMEZONE||'Asia/Dhaka',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(now);
-   const late=hm(t)>hm(s.duty_start)?1:0;
+   const tz=env.TIMEZONE||'Asia/Dhaka';
+   const t=new Intl.DateTimeFormat('en-GB',{timeZone:tz,hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(now);
+   const day=ms=>new Intl.DateTimeFormat('en-CA',{timeZone:tz}).format(ms);
+   const lastIn=(await one('SELECT MAX(punch_in) m FROM sessions WHERE staff_id=?',s.id)).m;
+   const sameDay=!!lastIn&&day(lastIn)===day(now);
+   const late=(!sameDay&&hm(t)>hm(s.duty_start))?1:0;
    await run('INSERT INTO sessions(staff_id,punch_in,late) VALUES(?,?,?)',s.id,now,late);
    if(late)await fine(s,1000,'Late punch in (duty starts '+s.duty_start+')');
    await notify(s.name+' punched in'+(late?' (LATE, Tk 1000 fine)':''));
@@ -121,7 +123,9 @@ export async function onRequest({request,env}){
   }
   if(path==='break/start'){
    if(ob)return E('A break is already running.');
-   if(now-cur.punch_in<3600000)return E('You cannot take a break within 1 hour of punch in. '+Math.ceil((3600000-(now-cur.punch_in))/60000)+' minute(s) remaining.');
+   const lb=(await one('SELECT MAX(ended) m FROM breaks WHERE session_id IN (SELECT id FROM sessions WHERE staff_id=?)',s.id)).m||0;
+   const ref=Math.max(cur.punch_in,lb),left=3600000-(now-ref);
+   if(left>0)return E('You cannot take a break yet. Wait '+Math.ceil(left/60000)+' more minute(s) (1 hour after punch in or after your last break).');
    if(!LIM[b.type])return E('Invalid break type.');
    await run('INSERT INTO breaks(session_id,type,started) VALUES(?,?,?)',cur.id,b.type,now);
    await notify(s.name+' started '+LN[b.type]);
